@@ -1,7 +1,11 @@
+from __future__ import division
+from __future__ import absolute_import
 import pygame
 import pygame.locals
 import os
 import operator
+from itertools import izip
+from itertools import imap
 pygame.init()
 
 _SIZE = 4
@@ -13,19 +17,19 @@ _TOP= int(_BLOCK_SIZE*1.5)
 _GameEnd = False
 _tickPerBlock=4  #4 ticks per block
 fpsClock = pygame.time.Clock()
-event2048 = pygame.event.Event(pygame.USEREVENT+1, message="Reach 2048!")
-eventAllLocked = pygame.event.Event(pygame.USEREVENT+2, message="All blocks are locked!")
-eventNewGame = pygame.event.Event(pygame.USEREVENT+3, message="New Game Started!")
+event2048 = pygame.event.Event(pygame.USEREVENT+1, message=u"Reach 2048!")
+eventAllLocked = pygame.event.Event(pygame.USEREVENT+2, message=u"All blocks are locked!")
+eventNewGame = pygame.event.Event(pygame.USEREVENT+3, message=u"New Game Started!")
 
 SOUNDEVENT = pygame.USEREVENT+4
-soundEventMiss = pygame.event.Event(SOUNDEVENT, sound='miss')
-soundEventSwipe = pygame.event.Event(SOUNDEVENT, sound='swipe')
-soundEventHit1 = pygame.event.Event(SOUNDEVENT, sound='one')
-soundEventHit2 = pygame.event.Event(SOUNDEVENT, sound='two')
-soundEventWin = pygame.event.Event(SOUNDEVENT, sound='win')
-soundEventEnd = pygame.event.Event(SOUNDEVENT, sound='gameover')
+soundEventMiss = pygame.event.Event(SOUNDEVENT, sound=u'miss')
+soundEventSwipe = pygame.event.Event(SOUNDEVENT, sound=u'swipe')
+soundEventHit1 = pygame.event.Event(SOUNDEVENT, sound=u'one')
+soundEventHit2 = pygame.event.Event(SOUNDEVENT, sound=u'two')
+soundEventWin = pygame.event.Event(SOUNDEVENT, sound=u'win')
+soundEventEnd = pygame.event.Event(SOUNDEVENT, sound=u'gameover')
 
-class blocks:
+class blocks(object):
     def __init__(self):
         self.blockList=[]
         self.animatePlan=[]  # either None or Most recent movement plan
@@ -36,10 +40,10 @@ class blocks:
     def newBlock(self):
         existing=[]
         if len(self.blockList)>=16:
-            raise ValueError("can't have full board")
+            raise ValueError(u"can't have full board")
         for [x,y,z] in self.blockList:
             existing.append(y*_SIZE+x)
-        simpleEmpty=[x for x in range(0,16) if x not in existing]
+        simpleEmpty=[x for x in xrange(0,16) if x not in existing]
         import random
         x=random.choice(simpleEmpty)
         z = random.randint(0,10)
@@ -53,30 +57,30 @@ class blocks:
 
     def checkPairable(self):
 
-        Matrix = [[0 for x in range(_SIZE)] for x in range(_SIZE)]
+        Matrix = [[0 for x in xrange(_SIZE)] for x in xrange(_SIZE)]
         for x,y,z in self.blockList:
             Matrix[y][x]=z
-        for j in range(0,_SIZE):
-            for i in range(0,_SIZE-1):
+        for j in xrange(0,_SIZE):
+            for i in xrange(0,_SIZE-1):
                 if Matrix [i][j]==Matrix[i+1][j] or Matrix [j][i]==Matrix[j][i+1]:
                     return True #  pairable, no deadlock
         return False # no pair,
 
-    def moveBlocks(self,directive:int):
+    def moveBlocks(self,directive):
 
         newList=[]
-        Matrix = [[[0,x+y*_SIZE] for x in range(_SIZE)] for y in range(_SIZE)]
+        Matrix = [[[0,x+y*_SIZE] for x in xrange(_SIZE)] for y in xrange(_SIZE)]
         for x,y,z in self.blockList:
             Matrix[y][x][0]=z
     #    Here it would had been much easier if i used stack style lists
         if directive == pygame.K_DOWN:  # 90 rotation
-            Matrix=[list(elem) for elem in zip(*Matrix[::-1])]
+            Matrix=[list(elem) for elem in izip(*Matrix[::-1])]
             Matrix,animateList,score=self.addMatrix(Matrix)
-            Matrix=[list(elem[::-1]) for elem in zip(*Matrix[::-1])][::-1]
+            Matrix=[list(elem[::-1]) for elem in izip(*Matrix[::-1])][::-1]
         elif directive == pygame.K_UP:
-            Matrix=[list(elem) for elem in zip(*Matrix)]
+            Matrix=[list(elem) for elem in izip(*Matrix)]
             Matrix,animateList,score=self.addMatrix(Matrix)
-            Matrix=[list(elem) for elem in zip(*Matrix)]
+            Matrix=[list(elem) for elem in izip(*Matrix)]
 
         elif directive == pygame.K_LEFT:  # no rotation
             Matrix,animateList,score=self.addMatrix(Matrix)
@@ -110,7 +114,7 @@ class blocks:
 
         self.animatePlan = (directive,animateList,self.score,score,updateBest)
 
-    def addMatrix(self,matrix:list):
+    def addMatrix(self,matrix):
 
         newList=[]
         newLine=[]
@@ -124,7 +128,7 @@ class blocks:
                     pass
                 elif len(newLine)>0 and newLine[-1]==each and not lastPaired:
                     if counter < len(newLine) :
-                        raise ValueError('height from gravity not higher than blocks underneath')
+                        raise ValueError(u'height from gravity not higher than blocks underneath')
                     animateList[-1][4]=False
                     animateList.append([i,each,counter-len(newLine),False,True])  # Bool-1:Solid/disappear, Bool-2 = same/double
                     newLine[-1]= 2*each
@@ -135,7 +139,7 @@ class blocks:
                         pygame.event.post(soundEventWin)
                         pygame.event.post(event2048)
                         self.reached2048 = True
-                    elif each>=64 :
+                    elif each>64 :
                         pygame.event.post(soundEventHit2)
 
                 else:
@@ -154,7 +158,7 @@ class blocks:
             newLine=[]
         return newList,animateList,score
 
-class graphics:
+class graphics(object):
 
     def __init__(self):
         
@@ -169,42 +173,42 @@ class graphics:
                   32:(200,100,50),64:(150,60,30),128:(255,219,90),
                   256:(229,200,70),512:(229,180,50),1024:(229,170,40),2048:(229,60,20),
                   4096:(60,0,0),8192:(0,0,100),16384:(30,0,0),32768:(0,0,0)}
-        for num in range (16,27):
+        for num in xrange (16,27):
             self.colors[2**num] = (20,0,0)
-        self.scoreFont  = pygame.font.Font('AsapBold.ttf',16,bold=True)
-        self.menuFont  = pygame.font.Font('AsapBold.ttf',20,bold=True)
+        self.scoreFont  = pygame.font.Font(u'AsapBold.ttf',16,bold=True)
+        self.menuFont  = pygame.font.Font(u'AsapBold.ttf',20,bold=True)
 
-        fontObj  = pygame.font.Font('AsapBold.ttf',32,bold= True)
-        fontObj2  = pygame.font.Font('AsapBold.ttf',32)
-        fontObj16  = pygame.font.Font('AsapBold.ttf',30)
-        fontObj128  = pygame.font.Font('AsapBold.ttf',29,bold=True)
-        fontObj1024  = pygame.font.Font('AsapBold.ttf',28,bold=True)
-        fontObj16384  = pygame.font.Font('AsapBold.ttf',26,bold=True)
-        fontObjSmall  = pygame.font.Font('AsapBold.ttf',18,bold=True)
+        fontObj  = pygame.font.Font(u'AsapBold.ttf',32,bold= True)
+        fontObj2  = pygame.font.Font(u'AsapBold.ttf',32)
+        fontObj16  = pygame.font.Font(u'AsapBold.ttf',30)
+        fontObj128  = pygame.font.Font(u'AsapBold.ttf',29,bold=True)
+        fontObj1024  = pygame.font.Font(u'AsapBold.ttf',28,bold=True)
+        fontObj16384  = pygame.font.Font(u'AsapBold.ttf',26,bold=True)
+        fontObjSmall  = pygame.font.Font(u'AsapBold.ttf',18,bold=True)
 
         fonts ={2:fontObj2,4:fontObj2,8:fontObj2,16:fontObj16,32:fontObj16,64:fontObj16,128:fontObj128,256:fontObj128,512:fontObj128,
                 1024:fontObj1024,2048:fontObj1024,4096:fontObj1024,8192:fontObj1024,16384:fontObj16384,0:fontObjSmall}
         #3 ways of creating dictionary. 1. assign one-by-one. 2. from tuples. 3 from parallel lists (straight forward)
-        self.menuTitleFont=pygame.font.Font('AsapBold.ttf',34,bold= True)
+        self.menuTitleFont=pygame.font.Font(u'AsapBold.ttf',34,bold= True)
         self.fontBox={}
-        for num in range(1,27):
-            self.fontBox[2**num]=fonts.get(2**num,fonts[0]).render(str(2**num),True,self.granite if 2**num<16 else self.white)
+        for num in xrange(1,27):
+            self.fontBox[2**num]=fonts.get(2**num,fonts[0]).render(unicode(2**num),True,self.granite if 2**num<16 else self.white)
 
         self.paintedBlocks= {}
-        for num in range(1,27):
+        for num in xrange(1,27):
             self.paintedBlocks[2**num] = pygame.Surface((_BLOCK_SIZE-_RIM,_BLOCK_SIZE-_RIM))
             self.paintedBlocks[2**num].fill(self.colors[2**num])
             numRect = self.fontBox[2**num].get_rect()
             numRect.center = self.paintedBlocks[2**num].get_rect().center
             self.paintedBlocks[2**num].blit(self.fontBox[2**num],numRect)
 
-        self.fontBox[0]=fonts[0].render(str(2**num),True,self.white)
-        self.fontBox[-1]=self.menuFont.render('New Game',True,self.white)
-        self.fontBox[-2]=self.scoreFont.render('Best',True,self.grey)
-        self.fontBox[-3]=self.scoreFont.render('Score',True,self.grey)
-        titleBox = fontObj.render('2048',True,self.white)
+        self.fontBox[0]=fonts[0].render(unicode(2**num),True,self.white)
+        self.fontBox[-1]=self.menuFont.render(u'New Game',True,self.white)
+        self.fontBox[-2]=self.scoreFont.render(u'Best',True,self.grey)
+        self.fontBox[-3]=self.scoreFont.render(u'Score',True,self.grey)
+        titleBox = fontObj.render(u'2048',True,self.white)
 
-        self.fontBox[1]=fonts[0].render(str(2**num),True,self.grey)
+        self.fontBox[1]=fonts[0].render(unicode(2**num),True,self.grey)
 
 
         self.boxArea=pygame.Surface((_BLOCK_SIZE*_SIZE,int(_BLOCK_SIZE*(_SIZE+1.5))))
@@ -255,8 +259,8 @@ class graphics:
 
 
         self.boxArea.blit(self.topArea,topRect)
-        for y in range(0,_SIZE):
-            for x in range(0,_SIZE):
+        for y in xrange(0,_SIZE):
+            for x in xrange(0,_SIZE):
                 pygame.draw.rect(self.boxArea,self.lighterBlue, self.makeRect(x,y,_BLOCK_SIZE-_RIM))
 
         self.bgArea=self.boxArea.copy()
@@ -283,7 +287,7 @@ class graphics:
         step =  _BLOCK_SIZE//animateCounter #for new blocks and double blocks
         screenList= []
 
-        for i in range(0,animateCounter):
+        for i in xrange(0,animateCounter):
             screenList.append(self.bgArea.copy())  # using bgArea only
         if score > 0 : self.animateScore(screenList,score,None if not updateBest else score)  #done on bg
 
@@ -293,29 +297,29 @@ class graphics:
             screenList[0].blit(self.paintedBlocks[value],tempRect)
 
             if willStaySolid and willNumFixed and move == 0:
-                for frame in range(1,animateCounter):
+                for frame in xrange(1,animateCounter):
                     screenList[frame].blit(self.paintedBlocks[value],tempRect)
             elif willStaySolid and willNumFixed:
-                for frame in range(1,move*_tickPerBlock+1):
+                for frame in xrange(1,move*_tickPerBlock+1):
                     tempRect.center = graphics.boxShift(tempRect.center,directive,_tickPerBlock)
                     screenList[frame].blit(self.paintedBlocks[value],tempRect)
 
-                for frame in range(move*_tickPerBlock+1,animateCounter):
+                for frame in xrange(move*_tickPerBlock+1,animateCounter):
                     screenList[frame].blit(self.paintedBlocks[value],tempRect)
 
             elif not willStaySolid and not willNumFixed:
-                raise ValueError('cant have both: vanishing and doubling')
+                raise ValueError(u'cant have both: vanishing and doubling')
             elif not willStaySolid:
-                for frame in range(1,move*_tickPerBlock):
+                for frame in xrange(1,move*_tickPerBlock):
                     tempRect.center = graphics.boxShift(tempRect.center,directive,_tickPerBlock)
                     screenList[frame].blit(self.paintedBlocks[value],tempRect)
             elif not willNumFixed:
-                for frame in range(1,move*_tickPerBlock+1):
+                for frame in xrange(1,move*_tickPerBlock+1):
                     tempRect.center = graphics.boxShift(tempRect.center,directive,_tickPerBlock)
                     screenList[frame].blit(self.paintedBlocks[value],tempRect)
 
                 growing = _BLOCK_SIZE//2+1  #starting size for double block
-                for frame in range(animateCounter//2,animateCounter):   # generate frames for double block with zoom fx
+                for frame in xrange(animateCounter//2,animateCounter):   # generate frames for double block with zoom fx
                     tmpx,tmpy=graphics.boxMove(x1,y1,directive,move)
                     tempRect=self.makeRect(tmpx,tmpy,growing)
                     growing = growing+step
@@ -330,7 +334,7 @@ class graphics:
         step =  _BLOCK_SIZE//animateCounter
 
         growing = _BLOCK_SIZE//2+1  # starting size for the one new block
-        for frame in range(animateCounter//2,animateCounter):  #generate frames for the one new block with zoom fx
+        for frame in xrange(animateCounter//2,animateCounter):  #generate frames for the one new block with zoom fx
             tempRect=self.makeRect(x,y,growing)
             growing = growing+step
             self.drawRect(frameList[frame],tempRect,z)
@@ -347,11 +351,11 @@ class graphics:
         x,y,z=newBox
         animateCounter =  _SIZE* _tickPerBlock
         step =  _BLOCK_SIZE//(animateCounter*2)
-        for i in range(0,animateCounter):
+        for i in xrange(0,animateCounter):
             frameList.append(self.bgArea.copy())
 
         growing = _BLOCK_SIZE//2  # starting size for the one new block
-        for frame in range(0,animateCounter):  #generate frames for the one new block with zoom fx
+        for frame in xrange(0,animateCounter):  #generate frames for the one new block with zoom fx
             tempRect=self.makeRect(x,y,growing)
             growing = growing+step
             self.drawRect(frameList[frame],tempRect,z)
@@ -369,13 +373,13 @@ class graphics:
 
     def animateScore(self,frameList,score,score2=None):
         animateCounter = len(frameList)-1
-        msg=str(score)
+        msg=unicode(score)
         step = 3
         scoreBoxObj = self.scoreFont.render(msg,True,self.white)
         scoreBox= scoreBoxObj.get_rect()
         scoreBox.right,scoreBox.bottom = self.scorePos
         scoreBox.bottom -=5
-        for frame in range(animateCounter//2,animateCounter):  #generate frames for the one new block with zoom fx
+        for frame in xrange(animateCounter//2,animateCounter):  #generate frames for the one new block with zoom fx
             frameList[frame].fill(self.colors[8],scoreBox)
             frameList[frame].blit(scoreBoxObj,scoreBox)
             scoreBox.bottom -=step
@@ -383,12 +387,12 @@ class graphics:
         if score2 == None :
             return
 
-        msg=str(score)
+        msg=unicode(score)
         bestBoxObj = self.scoreFont.render(msg,True,self.white)
         bestBox = bestBoxObj.get_rect()
         bestBox.right,bestBox.bottom = self.bestPos
         bestBox.bottom-=5
-        for frame in range(animateCounter//2,animateCounter):  #generate frames for the one new block with zoom fx
+        for frame in xrange(animateCounter//2,animateCounter):  #generate frames for the one new block with zoom fx
             frameList[frame].fill(self.colors[8],bestBox)
             frameList[frame].blit(bestBoxObj,bestBox)
             bestBox.bottom-=step
@@ -404,25 +408,25 @@ class graphics:
     def boxShift(boxRect,directive,shift):
         Shifter={pygame.K_DOWN:(0,+_BLOCK_SIZE//shift),pygame.K_UP:(0,-_BLOCK_SIZE//shift),
                  pygame.K_LEFT:(-_BLOCK_SIZE//shift,0),pygame.K_RIGHT:(+_BLOCK_SIZE//shift,0)}
-        return tuple(map(operator.add,boxRect, Shifter[directive]))
+        return tuple(imap(operator.add,boxRect, Shifter[directive]))
     @staticmethod
     def boxMove(x1,y1,directive,move):
         if directive in (pygame.K_DOWN, pygame.K_UP):
             y1+= move if directive == pygame.K_DOWN else -move
         elif directive in (pygame.K_LEFT, pygame.K_RIGHT):
             x1+= move if directive == pygame.K_RIGHT else -move
-        if x1 >=_SIZE or x1<0 or y1>= _SIZE or y1<0 : raise ValueError('block beyond boundaries')
+        if x1 >=_SIZE or x1<0 or y1>= _SIZE or y1<0 : raise ValueError(u'block beyond boundaries')
         return x1,y1  # trivia: return type is tuple here
 
 def updateScore(gameDATA,gameGraphics):
-    msg=str(gameDATA.score)
+    msg=unicode(gameDATA.score)
     scoreCounterBoxObj = gameGraphics.scoreFont.render(msg,True,gameGraphics.white)
     scoreBox= scoreCounterBoxObj.get_rect()
     scoreBox.right,scoreBox.bottom = gameGraphics.scorePos
     gameGraphics.boxArea.fill(gameGraphics.colors[8],scoreBox)
     gameGraphics.boxArea.blit(scoreCounterBoxObj,scoreBox)
 
-    msg= str(gameDATA.bestscore)
+    msg= unicode(gameDATA.bestscore)
     bestCounterBoxObj = gameGraphics.scoreFont.render(msg,True,gameGraphics.white)
     bestBox = bestCounterBoxObj.get_rect()
     bestBox.right,bestBox.bottom = gameGraphics.bestPos
@@ -452,17 +456,17 @@ def closeMenu(mainScreen,gameData,gameGraphics,eventNum):
     topMsg=leftMsg=rightMsg=None
 
     if eventNum == eventAllLocked.type:
-        topMsg = "Game Over!"
-        leftMsg = "Quit"
-        rightMsg = "Try Again?"
+        topMsg = u"Game Over!"
+        leftMsg = u"Quit"
+        rightMsg = u"Try Again?"
     elif eventNum == event2048.type:
-        topMsg = "You Won!"
-        leftMsg = "Quit"
-        rightMsg = "Continue"
+        topMsg = u"You Won!"
+        leftMsg = u"Quit"
+        rightMsg = u"Continue"
     elif eventNum == eventNewGame.type:
-        topMsg = "New Game?"
-        leftMsg = "No"
-        rightMsg = "Yes"
+        topMsg = u"New Game?"
+        leftMsg = u"No"
+        rightMsg = u"Yes"
 
     topMsgSurface = gameGraphics.menuTitleFont.render(topMsg,True,gameGraphics.white)
     topRect=topMsgSurface.get_rect()
@@ -530,13 +534,13 @@ def finishFrameList(mainScreen,frameList):
 
 mainScreen= pygame.display.set_mode((_MAX,_MAX+150))
 anchor  = mainScreen.get_rect()
-pygame.display.set_caption('2048')
+pygame.display.set_caption(u'2048')
 
 frameList = []
 gameBG = gameDATA = None
-soundTable ={ 'swipe':pygame.mixer.Sound('swipe.ogg'), 'miss' : pygame.mixer.Sound('wall.ogg'),
-             'one' : pygame.mixer.Sound('singleCrush.ogg'), 'two' : pygame.mixer.Sound('multiCrush.ogg'),
-             'win' : pygame.mixer.Sound('win.ogg'), 'gameover' : pygame.mixer.Sound('gameover.ogg')}
+soundTable ={ u'swipe':pygame.mixer.Sound(u'swipe.ogg'), u'miss' : pygame.mixer.Sound(u'wall.ogg'),
+             u'one' : pygame.mixer.Sound(u'singleCrush.ogg'), u'two' : pygame.mixer.Sound(u'multiCrush.ogg'),
+             u'win' : pygame.mixer.Sound(u'win.ogg'), u'gameover' : pygame.mixer.Sound(u'gameover.ogg')}
 
 pygame.event.post(eventNewGame)
 

@@ -57,8 +57,6 @@ fonts ={2:fontObj2,4:fontObj2,8:fontObj2,16:fontObj16,32:fontObj16,64:fontObj16,
 fontBox={}
 for num in range(1,16):
     fontBox[pow(2,num)]=fonts.get(pow(2,num),fonts[0]).render(str(pow(2,num)),True,granite if pow(2,num)<16 else whiteColor)
-for num in range(1,16):
-    fontBox[pow(2,num)]=fonts.get(pow(2,num),fonts[0]).render(str(pow(2,num)),True,granite if pow(2,num)<16 else whiteColor)
 
 fontBox[0]=fonts[0].render(str(pow(2,num)),True,whiteColor)
 fontBox[-1]=fontObjbox1.render('New Game',True,whiteColor)
@@ -225,6 +223,7 @@ def drawBG(myBoxList=None,Score=None):
         drawBox(box=myBoxList[-1],border=gold)
     updateScore(0 if Score==None else Score)
 
+# Take score (int) and update it on window surface. Uses fontbox objects
 def updateScore(score):
     msg=str(score)
     scoreCounterBoxObj = fontObjbox2.render(msg,True,grey)
@@ -236,6 +235,8 @@ def updateScore(score):
     bestCounterRectobj.center = bestBox.move(0,10).center
     windowSurfaceObj.blit(scoreCounterBoxObj,scoreCounterRectobj)
     windowSurfaceObj.blit(bestCounterBoxObj,bestCounterRectobj)
+
+
 
 def drawBox(box=None,border=None,Rect=None):
     x,y,z=box

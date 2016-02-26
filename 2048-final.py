@@ -1,24 +1,36 @@
 import pygame
 import pygame.locals
-import copy
+import os
 import operator
+pygame.init()
 
 _SIZE = 4
 _BLOCK_SIZE = 100
 _MAX = _SIZE*_BLOCK_SIZE
 _RIM = 7
+_BEST = 0
 _TOP= int(_BLOCK_SIZE*1.5)
+_GameEnd = False
+_tickPerBlock=4  #4 ticks per block
 fpsClock = pygame.time.Clock()
 event2048 = pygame.event.Event(pygame.USEREVENT+1, message="Reach 2048!")
 eventAllLocked = pygame.event.Event(pygame.USEREVENT+2, message="All blocks are locked!")
 eventNewGame = pygame.event.Event(pygame.USEREVENT+3, message="New Game Started!")
 
+SOUNDEVENT = pygame.USEREVENT+4
+missEvent = pygame.event.Event(SOUNDEVENT, sound='miss')
+swipeEvent = pygame.event.Event(SOUNDEVENT, sound='swipe')
+hitEvent1 = pygame.event.Event(SOUNDEVENT, sound='one')
+hitEvent2 = pygame.event.Event(SOUNDEVENT, sound='two')
+winEvent = pygame.event.Event(SOUNDEVENT, sound='win')
+gameoverEvent = pygame.event.Event(SOUNDEVENT, sound='gameover')
 
 class blocks:
     def __init__(self):
         self.blockList=[]
         self.animatePlan=[]  # either None or Most recent movement plan
         self.score=0
+        self.bestscore=_BEST
         self.reached2048 = False
 
     def newBlock(self):
@@ -33,9 +45,9 @@ class blocks:
         z = random.randint(0,10)
         z = 2 if z <= 9 else 4
         self.blockList.append([x%4,x//4,z])
-        if len(self.blockList)==15 and not self.checkPairable():
+        if len(self.blockList)==16 and not self.checkPairable():
+            pygame.event.post(gameoverEvent)
             pygame.event.post(eventAllLocked)
-        print([x%4,x//4,z])
         return (x%4,x//4,z)
     #takes the myList(which contains the xyz in each block), check if any adjacent blocks are pairable
 
@@ -47,10 +59,11 @@ class blocks:
         for j in range(0,_SIZE):
             for i in range(0,_SIZE-1):
                 if Matrix [i][j]==Matrix[i+1][j] or Matrix [j][i]==Matrix[j][i+1]:
-                    return False #(pairable, no deadlock)
-        return True #no pair,
+                    return True #  pairable, no deadlock
+        return False # no pair,
 
     def moveBlocks(self,directive:int):
+
         newList=[]
         Matrix = [[[0,x+y*_SIZE] for x in range(_SIZE)] for y in range(_SIZE)]
         for x,y,z in self.blockList:
@@ -66,10 +79,8 @@ class blocks:
             Matrix=[list(elem) for elem in zip(*Matrix)]
 
         elif directive == pygame.K_LEFT:  # no rotation
-            print('move left, no rotation\n')
             Matrix,animateList,score=self.addMatrix(Matrix)
         elif directive == pygame.K_RIGHT:  # 180 rotation
-            print('move right, rotate 180\n')
             Matrix=[each [::-1] for each in Matrix[::-1]]
             Matrix,animateList,score=self.addMatrix(Matrix)
             Matrix=[each [::-1] for each in Matrix[::-1]]
@@ -83,26 +94,35 @@ class blocks:
         if standStill :
             animateList.clear()
             directive = 0
+            pygame.event.post(missEvent)
+        else:
+            pygame.event.post(swipeEvent)
 
         self.blockList.clear()
         self.blockList = list(newList)
+        updateBest = False
+        if self.score == self.bestscore:
+            self.bestscore += score
+            updateBest = True
+        elif self.score > self.bestscore:
+            self.bestscore = self.score + score
         self.score += score
-        self.animatePlan = (directive,animateList,self.score,score)
+
+        self.animatePlan = (directive,animateList,self.score,score,updateBest)
 
     def addMatrix(self,matrix:list):
 
-        global _2048
         newList=[]
         newLine=[]
         animateList=[]
         score=0
         lastPaired=False
+        crushCount = 0
         for line in matrix:
             for counter,[each,i] in enumerate(line):
                 if each ==0:
                     pass
                 elif len(newLine)>0 and newLine[-1]==each and not lastPaired:
-
                     if counter < len(newLine) :
                         raise ValueError('height from gravity not higher than blocks underneath')
                     animateList[-1][4]=False
@@ -110,12 +130,20 @@ class blocks:
                     newLine[-1]= 2*each
                     score += 2*each
                     lastPaired=True
-                    if  each==1024 and not self.reached2048 :
+                    crushCount += 1
+                    if  each==2**4 and not self.reached2048 :
+                        pygame.event.post(winEvent)
                         pygame.event.post(event2048)
+                        self.reached2048 = True
                 else:
                     animateList.append([i,each,counter-len(newLine),True,True])
                     newLine.append(each)
                     lastPaired=False
+            if crushCount == 1:
+                pygame.event.post(hitEvent1)
+            elif crushCount >= 2:
+                pygame.event.post(hitEvent2)
+            crushCount = 0
 
             lastPaired=False
             newLine.extend( [0] *(_SIZE-len(newLine)))
@@ -127,7 +155,6 @@ class graphics:
 
     def __init__(self):
         
-        self.score = 0
         self.white = pygame.Color(255,255,255)
         self.lightBlue = pygame.Color(173, 216, 230)
         self.lighterBlue = pygame.Color(235,255,255)
@@ -184,6 +211,7 @@ class graphics:
         topRect=self.topArea.get_rect()
         self.topArea.fill(self.lightBlue)
         x,y = topRect.center
+        self.ngRect = None
 
         scoreRect = pygame.Rect(0,0,_BLOCK_SIZE-_RIM,int(_BLOCK_SIZE*.6))
         bestRect = pygame.Rect(0,0,_BLOCK_SIZE-_RIM,int(_BLOCK_SIZE*.6))
@@ -193,6 +221,8 @@ class graphics:
         bestRect.centerx = x + _BLOCK_SIZE//2
         ngRect.centerx = x
         ngRect.centery = int(_BLOCK_SIZE//2.5)
+        self.ngRect = ngRect.copy()
+        self.ngRect.left = ngRect.left + _BLOCK_SIZE*2
 
         boxRect = self.boxArea.get_rect()
         topRect.right=boxRect.right
@@ -225,6 +255,7 @@ class graphics:
         for y in range(0,_SIZE):
             for x in range(0,_SIZE):
                 pygame.draw.rect(self.boxArea,self.lighterBlue, self.makeRect(x,y,_BLOCK_SIZE-_RIM))
+
         self.bgArea=self.boxArea.copy()
 
     def makeRect(self,x,y,side ):
@@ -233,49 +264,25 @@ class graphics:
         newRect.centery = _TOP+ y*_BLOCK_SIZE +_BLOCK_SIZE//2
         return newRect
 
-    def updateScore(self,score):
-        msg=str(score)
-        scoreCounterBoxObj = self.scoreFont.render(msg,True,self.white)
-        bestCounterBoxObj = self.scoreFont.render(msg,True,self.white)
-        scoreBox= scoreCounterBoxObj.get_rect()
-        bestBox = bestCounterBoxObj.get_rect()
-        scoreBox.right,scoreBox.bottom = self.scorePos
-        bestBox.right,bestBox.bottom = self.bestPos
-        self.boxArea.fill(self.colors[8],scoreBox)
-        self.boxArea.fill(self.colors[8],bestBox)
-        self.boxArea.blit(scoreCounterBoxObj,scoreBox)
-        self.boxArea.blit(bestCounterBoxObj,bestBox)
-    def updateScoreBG(self,score):
-        msg=str(score)
-        scoreCounterBoxObj = self.scoreFont.render(msg,True,self.white)
-        bestCounterBoxObj = self.scoreFont.render(msg,True,self.white)
-        scoreBox= scoreCounterBoxObj.get_rect()
-        bestBox = bestCounterBoxObj.get_rect()
-        scoreBox.right,scoreBox.bottom = self.scorePos
-        bestBox.right,bestBox.bottom = self.bestPos
-        self.bgArea.fill(self.colors[8],scoreBox)
-        self.bgArea.fill(self.colors[8],bestBox)
-        self.bgArea.blit(scoreCounterBoxObj,scoreBox)
-        self.bgArea.blit(bestCounterBoxObj,bestBox)
+    # this one update the boxArea = current box
+
     def drawBox(self,box):
         x,y,z=box
         rectPos = self.makeRect(x,y,_BLOCK_SIZE-_RIM)
         self.boxArea.blit(self.paintedBlocks[z],rectPos)
     def animateMoveBlocks(self,animatePlan):
 
-        directive,animateList,addedscore,score=animatePlan
+        directive,animateList,addedscore,score,updateBest=animatePlan
         if directive == 0 :
             return []
-        flickPerBlock=4  #4 ticks per block
 
-        animateCounter=_SIZE*flickPerBlock
+        animateCounter=_SIZE*_tickPerBlock
         step =  _BLOCK_SIZE//animateCounter #for new blocks and double blocks
-
         screenList= []
-        self.updateScoreBG(addedscore)
+
         for i in range(0,animateCounter):
-            screenList.append(self.bgArea.copy())
-        if score > 0 : self.animateScore(screenList,score)
+            screenList.append(self.bgArea.copy())  # using bgArea only
+        if score > 0 : self.animateScore(screenList,score,None if not updateBest else score)  #done on bg
 
         for i,[ pos,value,move,willStaySolid,willNumFixed] in enumerate(animateList):
             x1,y1=pos%_SIZE,pos//_SIZE  # for all blocks except new
@@ -286,22 +293,22 @@ class graphics:
                 for frame in range(1,animateCounter):
                     screenList[frame].blit(self.paintedBlocks[value],tempRect)
             elif willStaySolid and willNumFixed:
-                for frame in range(1,move*flickPerBlock+1):
-                    tempRect.center = graphics.boxShift(tempRect.center,directive,flickPerBlock)
+                for frame in range(1,move*_tickPerBlock+1):
+                    tempRect.center = graphics.boxShift(tempRect.center,directive,_tickPerBlock)
                     screenList[frame].blit(self.paintedBlocks[value],tempRect)
 
-                for frame in range(move*flickPerBlock+1,animateCounter):
+                for frame in range(move*_tickPerBlock+1,animateCounter):
                     screenList[frame].blit(self.paintedBlocks[value],tempRect)
 
             elif not willStaySolid and not willNumFixed:
                 raise ValueError('cant have both: vanishing and doubling')
             elif not willStaySolid:
-                for frame in range(1,move*flickPerBlock):
-                    tempRect.center = graphics.boxShift(tempRect.center,directive,flickPerBlock)
+                for frame in range(1,move*_tickPerBlock):
+                    tempRect.center = graphics.boxShift(tempRect.center,directive,_tickPerBlock)
                     screenList[frame].blit(self.paintedBlocks[value],tempRect)
             elif not willNumFixed:
-                for frame in range(1,move*flickPerBlock+1):
-                    tempRect.center = graphics.boxShift(tempRect.center,directive,flickPerBlock)
+                for frame in range(1,move*_tickPerBlock+1):
+                    tempRect.center = graphics.boxShift(tempRect.center,directive,_tickPerBlock)
                     screenList[frame].blit(self.paintedBlocks[value],tempRect)
 
                 growing = _BLOCK_SIZE//2+1  #starting size for double block
@@ -326,7 +333,28 @@ class graphics:
             self.drawRect(frameList[frame],tempRect,z)
 
         pygame.draw.rect(frameList[-1],self.gold, tempRect)
-        pygame.draw.rect(frameList[-1],self.colors[z], tempRect.inflate(-4,-4))
+        pygame.draw.rect(frameList[-1],self.colors[z], tempRect.inflate(-5,-5))
+        tempFont = self.fontBox[z].get_rect()
+        tempFont.center = tempRect.center
+
+        frameList[-1].blit(self.fontBox[z],tempFont)
+
+        self.boxArea=frameList[-1]
+    def animateSingleBlock(self,newBox):
+        x,y,z=newBox
+        animateCounter =  _SIZE* _tickPerBlock
+        step =  _BLOCK_SIZE//(animateCounter*2)
+        for i in range(0,animateCounter):
+            frameList.append(self.bgArea.copy())
+
+        growing = _BLOCK_SIZE//2  # starting size for the one new block
+        for frame in range(0,animateCounter):  #generate frames for the one new block with zoom fx
+            tempRect=self.makeRect(x,y,growing)
+            growing = growing+step
+            self.drawRect(frameList[frame],tempRect,z)
+
+        pygame.draw.rect(frameList[-1],self.gold, tempRect)
+        pygame.draw.rect(frameList[-1],self.colors[z], tempRect.inflate(-5,-5))
         tempFont = self.fontBox[z].get_rect()
         tempFont.center = tempRect.center
 
@@ -334,26 +362,33 @@ class graphics:
 
         self.boxArea=frameList[-1]
 
-    def animateScore(self,frameList,score):
-        animateCounter = len(frameList)
+        return frameList
+
+    def animateScore(self,frameList,score,score2=None):
+        animateCounter = len(frameList)-1
         msg=str(score)
-        scoreBoxObj = self.scoreFont.render(msg,True,self.white)
-        bestBoxObj = self.scoreFont.render(msg,True,self.white)
-        scoreBox= scoreBoxObj.get_rect()
-        bestBox = bestBoxObj.get_rect()
-        scoreBox.right,scoreBox.bottom = self.scorePos
-        bestBox.right,bestBox.bottom = self.bestPos
-        bestBox.bottom-=5
-        scoreBox.bottom -=5
         step = 3
+        scoreBoxObj = self.scoreFont.render(msg,True,self.white)
+        scoreBox= scoreBoxObj.get_rect()
+        scoreBox.right,scoreBox.bottom = self.scorePos
+        scoreBox.bottom -=5
         for frame in range(animateCounter//2,animateCounter):  #generate frames for the one new block with zoom fx
             frameList[frame].fill(self.colors[8],scoreBox)
-            frameList[frame].fill(self.colors[8],bestBox)
             frameList[frame].blit(scoreBoxObj,scoreBox)
-            frameList[frame].blit(bestBoxObj,bestBox)
-            bestBox.bottom-=step
             scoreBox.bottom -=step
         frameList[-1].fill(self.colors[8],scoreBox)
+        if score2 == None :
+            return
+
+        msg=str(score)
+        bestBoxObj = self.scoreFont.render(msg,True,self.white)
+        bestBox = bestBoxObj.get_rect()
+        bestBox.right,bestBox.bottom = self.bestPos
+        bestBox.bottom-=5
+        for frame in range(animateCounter//2,animateCounter):  #generate frames for the one new block with zoom fx
+            frameList[frame].fill(self.colors[8],bestBox)
+            frameList[frame].blit(bestBoxObj,bestBox)
+            bestBox.bottom-=step
         frameList[-1].fill(self.colors[8],bestBox)
 
     def drawRect(self,screen,boxRect,value,color=None):
@@ -376,35 +411,55 @@ class graphics:
         if x1 >=_SIZE or x1<0 or y1>= _SIZE or y1<0 : raise ValueError('block beyond boundaries')
         return x1,y1  # trivia: return type is tuple here
 
+def updateScore(gameDATA,gameGraphics):
+    msg=str(gameDATA.score)
+    scoreCounterBoxObj = gameGraphics.scoreFont.render(msg,True,gameGraphics.white)
+    scoreBox= scoreCounterBoxObj.get_rect()
+    scoreBox.right,scoreBox.bottom = gameGraphics.scorePos
+    gameGraphics.boxArea.fill(gameGraphics.colors[8],scoreBox)
+    gameGraphics.boxArea.blit(scoreCounterBoxObj,scoreBox)
+
+    msg= str(gameDATA.bestscore)
+    bestCounterBoxObj = gameGraphics.scoreFont.render(msg,True,gameGraphics.white)
+    bestBox = bestCounterBoxObj.get_rect()
+    bestBox.right,bestBox.bottom = gameGraphics.bestPos
+    gameGraphics.boxArea.fill(gameGraphics.colors[8],bestBox)
+    gameGraphics.boxArea.blit(bestCounterBoxObj,bestBox)
+
+    gameGraphics.bgArea.fill(gameGraphics.colors[8],scoreBox)
+    gameGraphics.bgArea.blit(scoreCounterBoxObj,scoreBox)
+    gameGraphics.bgArea.fill(gameGraphics.colors[8],bestBox)
+    gameGraphics.bgArea.blit(bestCounterBoxObj,bestBox) 
+    
 
 def closeMenu(mainScreen,gameData,gameGraphics,eventNum):
-    animateCounter=25
+
     posx,posy = 0,0
+    bgLayer = mainScreen.copy()
     menuLayer = pygame.Surface([_MAX,_MAX+_TOP])  # the size of your rect
-    menuLayer2 = pygame.Surface([_MAX,_MAX+_TOP])  # the size of your rect
-    menuLayer2.fill(gameGraphics.lightBlue)
+    menuLayer.fill(gameGraphics.lightBlue)
     midPoint = menuLayer.get_rect().center
     midPointX, midPointY = midPoint
     upCenter = (midPointX,midPointY-_BLOCK_SIZE//2)
     leftBottomCenter = (midPointX-_BLOCK_SIZE,midPointY+_BLOCK_SIZE//3)
     rightBottomCenter = (midPointX+.9*_BLOCK_SIZE,midPointY+_BLOCK_SIZE//3)
 
-    buttonRect = pygame.Rect(0,0,int(1.3*_BLOCK_SIZE),_BLOCK_SIZE//2)
+    buttonRect1 = pygame.Rect(0,0,int(1.3*_BLOCK_SIZE),_BLOCK_SIZE//2)
+    buttonRect2 = pygame.Rect(0,0,int(1.3*_BLOCK_SIZE),_BLOCK_SIZE//2)
     topMsg=leftMsg=rightMsg=None
+
     if eventNum == eventAllLocked.type:
         topMsg = "Game Over!"
-        leftMsg = "Try Again?"
-        rightMsg = "Quit"
+        leftMsg = "Quit"
+        rightMsg = "Try Again?"
     elif eventNum == event2048.type:
         topMsg = "You Won!"
-        leftMsg = "Continue"
-        rightMsg = "Quit"
+        leftMsg = "Quit"
+        rightMsg = "Continue"
     elif eventNum == eventNewGame.type:
         topMsg = "New Game?"
-        leftMsg = "Yes"
-        rightMsg = "Continue"
-
-    print(topMsg,leftMsg,rightMsg)
+        leftMsg = "No"
+        rightMsg = "Yes"
 
     topMsgSurface = gameGraphics.menuTitleFont.render(topMsg,True,gameGraphics.white)
     topRect=topMsgSurface.get_rect()
@@ -418,32 +473,27 @@ def closeMenu(mainScreen,gameData,gameGraphics,eventNum):
     rightRect = rightMsgSurface.get_rect()
     rightRect.midbottom = rightBottomCenter
 
-    buttonRect.center = leftRect.center
-    menuLayer.fill(gameGraphics.colors[8],buttonRect)
+    buttonRect1.center = leftRect.center
+    buttonRect2.center = rightRect.center
 
-    buttonRect.center = rightRect.center
-    menuLayer.fill(gameGraphics.colors[8],buttonRect)
-
-    menuLayer.blit(topMsgSurface,topRect)
-    menuLayer.blit(leftMsgSurface,leftRect)
-    menuLayer.blit(rightMsgSurface,rightRect)
-
-
-    bgLayer2 = mainScreen.copy()
     startA=50
     endA = 180
-    step = (180-50)/(2*60)
+    step = (180-50)/60
     i=startA
 
-
+    # pygame implementation of alpha-channel is mediocre at best. Oh well. best I can do here.
     while True:
         if i < endA:
-            bgLayer = bgLayer2.copy()
-            menuLayer2.set_alpha(i)
-            bgLayer.blit(menuLayer2,(0,0))
-            bgLayer.blit(menuLayer,(0,0))
+            menuLayer.set_alpha(i)
             mainScreen.blit(bgLayer,(0,0))
+            mainScreen.blit(menuLayer,(0,0))
+            mainScreen.fill(gameGraphics.colors[16],buttonRect1)
+            mainScreen.fill(gameGraphics.colors[16],buttonRect2)
+            mainScreen.blit(topMsgSurface,topRect)
+            mainScreen.blit(leftMsgSurface,leftRect)
+            mainScreen.blit(rightMsgSurface,rightRect)
             i += step
+
         pygame.display.flip()
         fpsClock.tick(60)
         for event in pygame.event.get():
@@ -452,129 +502,90 @@ def closeMenu(mainScreen,gameData,gameGraphics,eventNum):
                 #soundObj.play()
             elif event.type == pygame.QUIT:
                 pygame.event.post(pygame.event.Event(pygame.QUIT))
-                _GameOver= True
-                return True
+                return
             elif  event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
                 pygame.event.post(pygame.event.Event(pygame.QUIT))
-                _GameOver= True
-                return True
+                return
             elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-                if leftRect.collidepoint((posx, posy)):  #Trying again
-                    _GameOver=False
-                    return False
-                elif rightRect.collidepoint((posx, posy)):
+                if buttonRect1.collidepoint((posx, posy)) and eventNum in (eventAllLocked.type,event2048.type):
                     pygame.event.post(pygame.event.Event(pygame.QUIT))
-                    _GameOver= True
-                    return True
-    '''while True:
-        drawBG(locked,Total)
-        if fading <140: fading+=5
-        closing.set_alpha(fading)                # alpha level
-        closing.fill(lighterblue)               # this fills the entire surface
-        windowSurfaceObj.blit(closing, (0,0))    #draw the semi-transparent surface to main surface.
-        windowSurfaceObj.blit(End_msgSurfaceObj,End_msgRectobj)
-        QuitRect=pygame.draw.rect(windowSurfaceObj,granite,Quit_msgRectobj,0)
-        windowSurfaceObj.fill(granite,QuitRect.inflate(15,15))
-        windowSurfaceObj.blit(Quit_msgSurfaceObj,Quit_msgRectobj)
+                    return
+                elif buttonRect2.collidepoint((posx, posy)) and eventNum in (eventAllLocked.type, eventNewGame.type) :  #Trying again
+                    pygame.event.post(eventNewGame)
+                    return
+                else:  # Continue playing game
+                    return
 
-        TryRect=pygame.draw.rect(windowSurfaceObj,granite,Try_msgRectobj,0)
-        windowSurfaceObj.fill(granite,TryRect.inflate(15,15))
-        windowSurfaceObj.blit(Try_msgSurfaceObj,Try_msgRectobj)
+    return
 
-        for event in pygame.event.get():
-            if event.type == pygame.MOUSEMOTION:
-                posx, posy= event.pos
-                #soundObj.play()
-            elif event.type == pygame.QUIT:
-                pygame.event.post(pygame.event.Event(pygame.QUIT))
-                _GameOver= True
-                return True
-            elif  event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
-                pygame.event.post(pygame.event.Event(pygame.QUIT))
-                _GameOver= True
-                return True
-            elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-                if Try_msgRectobj.collidepoint((posx, posy)):  #Trying again
-                    _GameOver=False
-                    return False
-                elif Quit_msgRectobj.collidepoint((posx, posy)):
-                    pygame.event.post(pygame.event.Event(pygame.QUIT))
-                    _GameOver= True
-                    return True
-        pygame.display.update()
-        fpsClock.tick(60)'''
-    return True
+def finishFrameList(mainScreen,frameList):
+    while len(frameList) >1 :
+        mainScreen.blit(frameList.pop(0),anchor)
+        pygame.display.flip()
+        fpsClock.tick(60)
+    return frameList.pop(0)
 
-
-pygame.init()
 mainScreen= pygame.display.set_mode((_MAX,_MAX+150))
-pos  = mainScreen.get_rect()
-
+anchor  = mainScreen.get_rect()
 pygame.display.set_caption('2048')
 
-gameBG = graphics()
-gameBG.updateScore(0)
-gameDATA = blocks()
-gameDATA.newBlock()
-#gameBG.boxArea.fill(lightblue)
-pygame.event.post(eventNewGame)
-#closeMenu(mainScreen,gameDATA,gameBG,pygame.USEREVENT+1)
-while  1:
-    mainScreen.blit(gameBG.boxArea,pos)
+frameList = []
+gameBG = gameDATA = None
+soundTable ={ 'swipe':pygame.mixer.Sound('swipe.ogg'), 'miss' : pygame.mixer.Sound('wall.ogg'),
+             'one' : pygame.mixer.Sound('singleCrush.ogg'), 'two' : pygame.mixer.Sound('multiCrush.ogg'),
+             'win' : pygame.mixer.Sound('win.ogg'), 'gameover' : pygame.mixer.Sound('gameover.ogg')}
 
+pygame.event.post(eventNewGame)
+
+while  not _GameEnd:
     for event in pygame.event.get():
-        if event.type == pygame.QUIT:  #system (or program) request the game to quit. can do something here for quit
-            pygame.quit()
+        if event.type == pygame.QUIT:
             _GameEnd= True
+            if gameDATA != None and gameDATA.bestscore >= _BEST : _BEST = gameDATA.bestscore
+
+        elif event.type == eventNewGame.type:
+            frameList.clear()
+            if gameDATA != None and gameDATA.bestscore >= _BEST : _BEST = gameDATA.bestscore
+            del gameDATA
+            gameDATA = blocks()
+            gameBG = graphics()
+            updateScore(gameDATA,gameBG)
+
+            newBox=gameDATA.newBlock()
+            frameList = gameBG.animateSingleBlock(newBox)
+        elif event.type in (event2048.type, eventAllLocked.type):
+            gameBG.boxArea = finishFrameList(mainScreen,frameList)
+            closeMenu(mainScreen,gameDATA,gameBG,event.type)
+        elif event.type == SOUNDEVENT :
+            soundTable[event.sound].play()
 
         elif event.type == pygame.MOUSEMOTION:
             mousex, mousey = event.pos
-            #soundObj.play()
-        elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-            if  True:   #newGameBox.collidepoint((mousex,mousey)):
-                print("Starting over")
-                #locked.append(getRandBox(locked))
-                _2048=None
-                Total=0
-                #drawBG(locked,Total)
-                #gameDATA.newBlock()
-
+        elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1 \
+                and gameBG.ngRect.collidepoint((mousex,mousey)):
+            closeMenu(mainScreen,gameDATA,gameBG,eventNewGame.type)
         elif event.type == pygame.KEYDOWN:
 
             if event.key in (pygame.K_LEFT,pygame.K_RIGHT, pygame.K_UP, pygame.K_DOWN) :
-
                 gameDATA.moveBlocks(event.key)
-                frameList=gameBG.animateMoveBlocks(gameDATA.animatePlan)
+                frameList2=gameBG.animateMoveBlocks(gameDATA.animatePlan)
 
-                if len(frameList) > 0 :
+                if len(frameList2) > 0 :
+                    updateScore(gameDATA,gameBG)
                     newBox = gameDATA.newBlock()
-                    gameBG.animateNewBlock(newBox,frameList)
-
-                    for each in frameList:
-                        mainScreen.blit(each,pos)
-                        pygame.display.flip()
-                        fpsClock.tick(60)
-                if gameDATA.score > 50:
-                    closeMenu(mainScreen,gameDATA,gameBG,pygame.USEREVENT+1)
-
-                #mainScreen.blit(gameBG.boxArea,pos)
-
-                #locked,animateList,standStill,score=processMovementByMatrix(locked,event.key)
-                '''if not standStill:
-                    Total = Total + score
-                    #new =getRandBox(locked)   #get random box
-                    #animateNew(new,animateList,original,Total)
-                    locked.append(new)       #append to locked
-                    print("Score :",Total,"random picK:",new)
-                    #drawBG(locked,Total)
-                    if len(locked)==_SIZE*_SIZE and checkPairable(locked) and not gameEND(False):
-                        print("Starting over")
-                        locked=[]
-                        locked.append(getRandBox(locked))
-                        Total=0
-                        drawBG(locked,Total)'''
+                    gameBG.animateNewBlock(newBox,frameList2)
+                    frameList.extend(frameList2)
 
             elif event.key == pygame.K_ESCAPE:
                 pygame.event.post(pygame.event.Event(pygame.QUIT))
+    if len(frameList) <= 0:
+        mainScreen.blit(gameBG.boxArea,anchor)
+    elif len(frameList) > 90:
+        del frameList[0:4]
+        mainScreen.blit(frameList.pop(0),anchor)
+    else:
+        mainScreen.blit(frameList.pop(0),anchor)
     pygame.display.flip()
-    fpsClock.tick(30)
+    fpsClock.tick(60)
+
+pygame.quit()
